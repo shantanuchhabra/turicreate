@@ -52,7 +52,14 @@ set_property(DIRECTORY PROPERTY INSTALLATION_BINARY_FILES "${INSTALLATION_BINARY
 add_custom_target(
   visualization_vega ALL
   DEPENDS visualization_client
-  COMMAND cp -a "${CMAKE_SOURCE_DIR}/src/visualization/Turi Create Visualization/src/js/node_modules" ${CMAKE_CURRENT_BINARY_DIR}
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src/visualization/Turi Create Visualization/src/js"
+  COMMAND npm run build-vg2png
+)
+
+add_custom_target(
+  visualization_vega_copy ALL
+  DEPENDS visualization_vega
+  COMMAND cp "${CMAKE_SOURCE_DIR}/src/visualization/Turi Create Visualization/src/js/build-vg2png" ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 if (APPLE)
