@@ -4444,7 +4444,7 @@ class SFrame(object):
 
         returned_plot.show()
 
-    def __plot(self):
+    def plot(self):
         path_to_client = _get_client_app_path()
 
         return Plot(self.__proxy__.plot(path_to_client))
