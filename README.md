@@ -1,5 +1,7 @@
 Quick Links: [Installation](#supported-platforms) | [Documentation](#documentation) | [v5.0 Beta](#version-50-beta)
 
+Hello this is a test, PLEASE DO NOT MERGE.
+
 <img align="right" src="https://docs-assets.developer.apple.com/turicreate/turi-dog.svg" alt="Turi Create" width="100">
 
 # Turi Create 
