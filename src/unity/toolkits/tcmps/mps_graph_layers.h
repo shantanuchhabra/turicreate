@@ -164,7 +164,7 @@ struct BNGraphLayer : public GraphLayer {
          std::string, std::tuple<std::string, float *, int, std::vector<int>>>
              &table) override;
 
-  TCMPSBatchNormWeights *_Nonnull data;
+  TCMPSBatchNormData *_Nonnull data;
   MPSCNNBatchNormalizationNode *_Nonnull node_fwd;
   MPSCNNBatchNormalizationGradientNode * _Nonnull node_bwd;
 };
