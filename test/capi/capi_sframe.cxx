@@ -1528,6 +1528,67 @@ BOOST_AUTO_TEST_CASE(test_sframe_read_json) {
   tc_release(sf);
 }
 
+
+BOOST_AUTO_TEST_CASE(test_sframe_join_single_column) {
+  tc_error *error = NULL;
+  tc_sframe *orders  = tc_sframe_create_empty(&error);
+  CAPI_CHECK_ERROR(error);
+  tc_sframe *customers  = tc_sframe_create_empty(&error);
+  CAPI_CHECK_ERROR(error);
+  turi::gl_sframe orders_gl, customers_gl;
+  /* 
+   * Orders
+   *
+   * +----------+-------------+--------+
+   * | order_id | customer_id |  year  |
+   * +----------+-------------+--------+
+   * |  10308   |       2     |  1966  |
+   * |  10309   |      37     |  2018  |
+   * |  10310   |      77     |  1998  |
+   * |  10311   |      10     |  2026  |
+   * |  10312   |      11     |  2022  |
+   * +----------+-------------+--------+
+   *
+   * Customers
+   * 
+   * +-------------+---------------+--------------+---------+
+   * | customer_id | customer_name | contact_name | country |
+   * +-------------+---------------+--------------+---------+
+   * |  37         |  Luka Modric  |  Mandzukic   | Croatia |
+   * |  1          | Romelu Lukaku |  Hazard      | Belgium |
+   * |  2          |  Harry Kane   |  Beckham     | England |
+   * |  77         | Kylian Mbappe |  Zidane      | France  |
+   * +-------------+---------------+--------------+---------+
+   *
+   */
+  std::vector<std::pair<std::string, std::vector<double> > > data
+    = { {"order_id",  {10308, 10309, 10310, 10311, 10312} },
+        {"customer_id", {2, 37, 77, 10, 11} },
+        {"year",   {1966, 2018, 1998, 2026, 2022} }
+      };
+
+  for (auto p : data) {
+    tc_sarray* sa = make_sarray_double(p.second);
+
+    tc_sframe_add_column(sf, p.first.c_str(), sa, &error);
+    CAPI_CHECK_ERROR(error);
+
+    turi::flex_list lst;
+
+    for (auto it = p.second.begin(); it!=p.second.end(); ++it) {
+        lst.push_back(*it);
+    }
+
+    turi::gl_sarray g(lst);
+
+    orders_gl.add_column(g, p.first.c_str());
+
+    tc_release(sa);
+  }
+
+}
+
+
 BOOST_AUTO_TEST_CASE(test_sframe_groupby_manual_sframe) {
 
   tc_error* error = NULL;

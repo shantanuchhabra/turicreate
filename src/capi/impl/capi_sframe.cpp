@@ -176,12 +176,31 @@ EXPORT tc_sframe* tc_sframe_join_on_single_column(tc_sframe* left,
   ERROR_HANDLE_END(error, NULL);
 }
 
+
 EXPORT tc_sframe* tc_sframe_join_on_multiple_columns(
     tc_sframe* left, tc_sframe* right,
     tc_flex_list* join_columns,
     const char* how, tc_error** error) {
-  // PLACEHOLDER
-  return NULL;
+  ERROR_HANDLE_START();
+  turi::ensure_server_initialized();
+
+  CHECK_NOT_NULL(error, left, "left tc_sframe", NULL);
+  CHECK_NOT_NULL(error, right, "right tc_sframe", NULL);
+
+  std::vector<std::string> join_columns_transform;
+
+  for (const turi::flexible_type& elem : join_columns->value) {
+    if (elem.get_type() != turi::flex_type_enum::STRING) {
+      set_error(error, "Contains a non-string column name.");
+      return NULL;
+    }
+    join_columns_transform.push_back(elem.get<turi::flex_string>());
+  }
+  
+  return new_tc_sframe(
+      left->value.join(right->value, join_columns_transform, how));
+
+  ERROR_HANDLE_END(error, NULL);
 
 }
 
