@@ -24,6 +24,8 @@
 #include <boost/gil/extension/numeric/sampler.hpp>
 #include <boost/gil/extension/numeric/resample.hpp>
 #include <boost/gil/utilities.hpp>
+#include <boost/gil/extension/toolbox/metafunctions.hpp>
+#include <boost/gil/extension/toolbox/metafunctions/gil_extensions.hpp>
 
 #include <unity/lib/gl_sframe.hpp>
 
@@ -118,6 +120,39 @@ private:
 
 };
 
+namespace {
+
+bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
+  float min_x = std::numeric_limits<float>::max();
+  float max_x = std::numeric_limits<float>::min();
+  float min_y = std::numeric_limits<float>::max();
+  float max_y = std::numeric_limits<float>::min();
+  for (auto corner: warped_corners) {
+    min_x = std::min(min_x, corner[0]);
+    max_x = std::max(max_x, corner[0]);
+    min_y = std::min(min_y, corner[1]);
+    max_y = std::max(max_y, corner[1]);
+  }
+  if (x < min_x || x > max_x || y < min_y || y > max_y) {
+    return false;
+  }
+  // TODO: make it work for a quadrilateral, not just a rectangle.
+  return true;
+}
+
+}
+
+void color_quadrilateral(const rgb8_image_t::view_t &mask_view, std::vector<Vector3f> warped_corners) {
+  for (int y = 0; y < mask_view.height(); ++y) {
+    auto row_iterator = mask_view.row_begin(y);
+    for (int x = 0; x < mask_view.width(); ++x) {
+      if (is_in_quadrilateral(x, y, warped_corners)) {
+        row_iterator[x] = rgb8_pixel_t(255, 255, 255);
+      }
+    }
+  }
+}
+
 gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
   // TODO: Get input image from the data sframe.
   // TODO: Use backgrounds from the background SFrame.
@@ -156,18 +191,24 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
     bottom_left_corner  << original_bottom_left_x , original_bottom_left_y , 1;
     bottom_right_corner << original_bottom_right_x, original_bottom_right_y, 1;
 
-    std::vector<Vector3f> warped_corners = {mat * top_left_corner   ,
-                                            mat * top_right_corner  ,
-                                            mat * bottom_left_corner,
-                                            mat * bottom_right_corner};
+    auto normalize = [](Vector3f corner) {
+      corner[0] /= corner[2];
+      corner[1] /= corner[2];
+      corner[2] = 1.0;
+      return corner;
+    };
+    std::vector<Vector3f> warped_corners = {normalize(mat * top_left_corner)   ,
+                                            normalize(mat * top_right_corner)  ,
+                                            normalize(mat * bottom_left_corner),
+                                            normalize(mat * bottom_right_corner)
+                                           };
 
+    // TODO: make a helper function called build_annotation
     float min_x = std::numeric_limits<float>::max();
     float max_x = std::numeric_limits<float>::min();
     float min_y = std::numeric_limits<float>::max();
     float max_y = std::numeric_limits<float>::min();
     for (auto corner: warped_corners) {
-      corner[0] /= corner[2];
-      corner[1] /= corner[2];
       min_x = std::min(min_x, corner[0]);
       max_x = std::max(max_x, corner[0]);
       min_y = std::min(min_y, corner[1]);
@@ -188,7 +229,7 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
                            };
 
     rgb8_image_t starter_image, background;
-    // TODO: Don't hardcode this.
+    // TODO: Don't hardcode this. Use interleaved_view!
     read_image("in-affine.jpg", starter_image, jpeg_tag());
     // TODO: Don't hardcode this. Fetch this from the backgrounds SFrame in a 
     // loop.
@@ -196,8 +237,14 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
 
     matrix3x3<double> M(mat.inverse());
     // TODO: Use this mask during superposition on a random background.
-    rgb8_image_t mask(rgb8_image_t::point_t(view(background).dimensions()));
-    fill_pixels(view(mask),rgb8_pixel_t(0, 0, 0));
+    rgb8_image_t mask(rgb8_image_t::point_t(view(starter_image).dimensions()*2));
+    fill_pixels(view(mask), rgb8_pixel_t(0, 0, 0));
+    color_quadrilateral(view(mask), warped_corners);
+    write_view("mask.jpg", view(mask), jpeg_tag());
+
+    // Superposition:
+    // mask * warped + (1-mask) * background
+
     rgb8_image_t transformed(rgb8_image_t::point_t(view(starter_image).dimensions()*2));
     fill_pixels(view(transformed),rgb8_pixel_t(255, 255, 255));
     resample_pixels(const_view(starter_image), view(transformed), M, bilinear_sampler());
@@ -215,7 +262,6 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
     {"image", images}
   };
   gl_sframe augmented_data_out = gl_sframe(augmented_data);
-  // TODO: Return the augmented data once the SFrame is written.
   return augmented_data_out;
 }
 

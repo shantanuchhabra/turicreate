@@ -10,6 +10,7 @@ def create(dataset, target, feature=None, batch_size=0, max_iterations=0,
     # Option arguments to pass in to C++ Object Detector, if we use it:
     # {'mlmodel_path':'/Users/schhabra/Desktop/apple/turicreate/darknet.mlmodel', 'max_iterations' : 25}
     augmented_data = model.augment(dataset, target, _tc.SFrame(), seed)
+    import pdb; pdb.set_trace()
     model = _tc.object_detector.create(augmented_data)
     return OneShotObjectDetector(model)
 
