@@ -142,13 +142,39 @@ bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
 
 }
 
-void color_quadrilateral(const rgb8_image_t::view_t &mask_view, std::vector<Vector3f> warped_corners) {
+void color_quadrilateral(const rgb8_image_t::view_t &mask_view, 
+                         const rgb8_image_t::view_t &mask_complement_view, 
+                         std::vector<Vector3f> warped_corners) {
   for (int y = 0; y < mask_view.height(); ++y) {
-    auto row_iterator = mask_view.row_begin(y);
+    auto mask_row_iterator = mask_view.row_begin(y);
+    auto mask_complement_row_iterator = mask_complement_view.row_begin(y);
     for (int x = 0; x < mask_view.width(); ++x) {
       if (is_in_quadrilateral(x, y, warped_corners)) {
-        row_iterator[x] = rgb8_pixel_t(255, 255, 255);
+        mask_row_iterator[x] = rgb8_pixel_t(255, 255, 255);
+        mask_complement_row_iterator[x] = rgb8_pixel_t(0, 0, 0);
       }
+    }
+  }
+}
+
+void superimpose_image(const rgb8_image_t::view_t &masked,
+                       const rgb8_image_t::view_t &mask,
+                       const rgb8_image_t::view_t &transformed,
+                       const rgb8_image_t::view_t &mask_complement,
+                       const rgb8_image_t::view_t &background) {
+  for (int y = 0; y < masked.height(); ++y) {
+    auto masked_row_it = masked.row_begin(y);
+    auto mask_row_it = mask.row_begin(y);
+    auto transformed_row_it = transformed.row_begin(y);
+    auto mask_complement_row_it = mask_complement.row_begin(y);
+    auto background_row_it = background.row_begin(y);
+    for (int x = 0; x < masked.width(); ++x) {
+      masked_row_it[x][0] = (mask_row_it[x][0]/255.0 * transformed_row_it[x][0] + 
+        mask_complement_row_it[x][0]/255.0 * background_row_it[x][0]);
+      masked_row_it[x][1] = (mask_row_it[x][1]/255.0 * transformed_row_it[x][1] + 
+        mask_complement_row_it[x][1]/255.0 * background_row_it[x][1]);
+      masked_row_it[x][2] = (mask_row_it[x][2]/255.0 * transformed_row_it[x][2] + 
+        mask_complement_row_it[x][2]/255.0 * background_row_it[x][2]);
     }
   }
 }
@@ -237,23 +263,31 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
 
     matrix3x3<double> M(mat.inverse());
     // TODO: Use this mask during superposition on a random background.
-    rgb8_image_t mask(rgb8_image_t::point_t(view(starter_image).dimensions()*2));
+    rgb8_image_t mask(rgb8_image_t::point_t(view(background).dimensions()));
+    // mask_complement = 1 - mask
+    rgb8_image_t mask_complement(rgb8_image_t::point_t(view(background).dimensions()));
     fill_pixels(view(mask), rgb8_pixel_t(0, 0, 0));
-    color_quadrilateral(view(mask), warped_corners);
+    fill_pixels(view(mask_complement), rgb8_pixel_t(255, 255, 255));
+    color_quadrilateral(view(mask), view(mask_complement), warped_corners);
     write_view("mask.jpg", view(mask), jpeg_tag());
 
-    // Superposition:
-    // mask * warped + (1-mask) * background
-
-    rgb8_image_t transformed(rgb8_image_t::point_t(view(starter_image).dimensions()*2));
+    rgb8_image_t transformed(rgb8_image_t::point_t(view(background).dimensions()));
     fill_pixels(view(transformed),rgb8_pixel_t(255, 255, 255));
     resample_pixels(const_view(starter_image), view(transformed), M, bilinear_sampler());
+
+    rgb8_image_t masked(rgb8_image_t::point_t(view(background).dimensions()));
+    fill_pixels(view(masked),rgb8_pixel_t(255, 255, 255));
+    // Superposition:
+    // mask * warped + (1-mask) * background
+    superimpose_image(view(masked), view(mask), view(transformed), 
+                                    view(mask_complement), view(background));
+    // rgb8_image_t masked = mask * transformed + mask_complement * background;
+    write_view("masked.jpg", view(masked), jpeg_tag());
 
     // TODO: Write these images into an SFrame that this function can return.
     std::string output_filename = "out-affine-" + std::to_string(i) + ".jpg";
     write_view(output_filename, view(transformed), jpeg_tag());
-    // rgb8_image_t::const_view_t transformed_view = const_view(transformed);
-    // const char* buffer = view.begin().x();
+    
     annotations.push_back(annotation);
     images.push_back(flex_image(transformed));
   }
