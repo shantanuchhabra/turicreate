@@ -25,6 +25,8 @@
 #include <boost/gil/extension/numeric/resample.hpp>
 #include <boost/gil/utilities.hpp>
 
+#include <unity/lib/gl_sframe.hpp>
+
 #include <image/numeric_extension/perspective_projection.hpp>
 
 #include <Eigen/Core>
@@ -124,6 +126,8 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
   ParameterSweep parameter_sampler = ParameterSweep(2*1024, 2*676);
   // TODO: Take n as input.
   int n = 1;
+  std::vector<flexible_type> annotations;
+  std::vector<flexible_type> images;
   for (int i = 0; i < n; i++) {
     parameter_sampler.sample(seed+i);
 
@@ -144,37 +148,44 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
       676/2,
       parameter_sampler.get_dz(),
       parameter_sampler.get_focal());
-    Vector3f top_left_corner(3);
-    top_left_corner     << original_top_left_x, original_top_left_y, 1;
-    Vector3f top_right_corner(3);
-    top_right_corner    << original_top_right_x, original_top_right_y, 1;
-    Vector3f bottom_left_corner(3);
-    bottom_left_corner  << original_bottom_left_x, original_bottom_left_y, 1;
-    Vector3f bottom_right_corner(3);
+
+    Vector3f top_left_corner(3)   , top_right_corner(3);
+    Vector3f bottom_left_corner(3), bottom_right_corner(3);
+    top_left_corner     << original_top_left_x    , original_top_left_y    , 1;
+    top_right_corner    << original_top_right_x   , original_top_right_y   , 1;
+    bottom_left_corner  << original_bottom_left_x , original_bottom_left_y , 1;
     bottom_right_corner << original_bottom_right_x, original_bottom_right_y, 1;
 
-    Vector3f new_top_left_corner = mat * top_left_corner;
-    Vector3f new_top_right_corner = mat * top_right_corner;
-    Vector3f new_bottom_left_corner = mat * bottom_left_corner;
-    Vector3f new_bottom_right_corner = mat * bottom_right_corner;
-    new_top_left_corner[0] /= new_top_left_corner[2];
-    new_top_left_corner[1] /= new_top_left_corner[2];
-    new_top_right_corner[0] /= new_top_right_corner[2];
-    new_top_right_corner[1] /= new_top_right_corner[2];
-    new_bottom_left_corner[0] /= new_bottom_left_corner[2];
-    new_bottom_left_corner[1] /= new_bottom_left_corner[2];
-    new_bottom_right_corner[0] /= new_bottom_right_corner[2];
-    new_bottom_right_corner[1] /= new_bottom_right_corner[2];
-    std::cout << "new_top_left_corner" << std::endl;
-    std::cout << new_top_left_corner << std::endl;
-    std::cout << "new_top_right_corner" << std::endl;
-    std::cout << new_top_right_corner << std::endl;
-    std::cout << "new_bottom_left_corner" << std::endl;
-    std::cout << new_bottom_left_corner << std::endl;
-    std::cout << "new_bottom_right_corner" << std::endl;
-    std::cout << new_bottom_right_corner << std::endl;
-    // TODO: Construct annotations that conform to the OD format, from the 
-    // four warped corner points.
+    std::vector<Vector3f> warped_corners = {mat * top_left_corner   ,
+                                            mat * top_right_corner  ,
+                                            mat * bottom_left_corner,
+                                            mat * bottom_right_corner};
+
+    float min_x = std::numeric_limits<float>::max();
+    float max_x = std::numeric_limits<float>::min();
+    float min_y = std::numeric_limits<float>::max();
+    float max_y = std::numeric_limits<float>::min();
+    for (auto corner: warped_corners) {
+      corner[0] /= corner[2];
+      corner[1] /= corner[2];
+      min_x = std::min(min_x, corner[0]);
+      max_x = std::max(max_x, corner[0]);
+      min_y = std::min(min_y, corner[1]);
+      max_y = std::max(max_y, corner[1]);
+    }
+    float center_x = (min_x + max_x) / 2;
+    float center_y = (min_y + max_y) / 2;
+    float bounding_box_width  = max_x - min_x;
+    float bounding_box_height = max_y - min_y;
+
+    flex_dict coordinates = {std::make_pair("x", center_x),
+                             std::make_pair("y", center_y),
+                             std::make_pair("width", bounding_box_width),
+                             std::make_pair("height", bounding_box_height)
+                            };
+    flex_dict annotation = {std::make_pair("coordinates", coordinates),
+                            std::make_pair("label", "placeholder")
+                           };
 
     rgb8_image_t starter_image, background;
     // TODO: Don't hardcode this.
@@ -194,9 +205,18 @@ gl_sframe _augment_data(gl_sframe data, gl_sframe backgrounds, long seed) {
     // TODO: Write these images into an SFrame that this function can return.
     std::string output_filename = "out-affine-" + std::to_string(i) + ".jpg";
     write_view(output_filename, view(transformed), jpeg_tag());
+    // rgb8_image_t::const_view_t transformed_view = const_view(transformed);
+    // const char* buffer = view.begin().x();
+    annotations.push_back(annotation);
+    images.push_back(flex_image(transformed));
   }
+  const std::map<std::string, std::vector<flexible_type> >& augmented_data = {
+    {"annotation", annotations},
+    {"image", images}
+  };
+  gl_sframe augmented_data_out = gl_sframe(augmented_data);
   // TODO: Return the augmented data once the SFrame is written.
-  return data;
+  return augmented_data_out;
 }
 
 one_shot_object_detector::one_shot_object_detector() {
