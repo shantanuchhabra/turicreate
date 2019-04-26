@@ -122,6 +122,24 @@ private:
 
 namespace {
 
+class Line {
+public:
+  Line(Vector3f P1, Vector3f P2) {
+    float x1 = P1[0], y1 = P1[1];
+    float x2 = P2[0], y2 = P2[1];
+    m_a = (y2 - y1) / (x2 - x1);
+    m_b = -1;
+    m_c = y1 - (x1 * (y2 - y1) / (x2 - x1));
+  }
+
+  bool side_of_line(int x, int y) {
+    return (m_a*x + m_b*y + m_c > 0);
+  }
+
+private:
+  float m_a, m_b, m_c; // ax + by + c = 0
+};
+
 bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
   float min_x = std::numeric_limits<float>::max();
   float max_x = std::numeric_limits<float>::min();
@@ -136,8 +154,18 @@ bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
   if (x < min_x || x > max_x || y < min_y || y > max_y) {
     return false;
   }
-  // TODO: make it work for a quadrilateral, not just a rectangle.
-  return true;
+  // swap last two entries to make the corners cyclic.
+  Vector3f temp = warped_corners[2];
+  warped_corners[2] = warped_corners[3];
+  warped_corners[3] = temp;
+  int num_true = 0;
+  for (unsigned int index = 0; index < warped_corners.size(); index++) {
+    auto left_corner = warped_corners[index % warped_corners.size()];
+    auto right_corner = warped_corners[(index+1) % warped_corners.size()];
+    Line L = Line(left_corner, right_corner);
+    num_true += (L.side_of_line(x, y));
+  }
+  return (num_true == 2);
 }
 
 }
