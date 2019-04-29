@@ -10,7 +10,6 @@ namespace turi{
 image_type::image_type(boost::gil::rgb8_image_t gil_image) {
   auto it = view(gil_image).begin();
   auto data = (uint8_t*) &boost::gil::at_c<0>(*it);
-  boost::gil::rgb8_image_t::const_view_t view = const_view(gil_image);
   m_height = gil_image.height();
   m_width = gil_image.width();
   m_channels = boost::gil::num_channels<boost::gil::rgb8_image_t>();
