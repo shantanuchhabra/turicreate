@@ -201,7 +201,7 @@ bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
 void color_quadrilateral(const rgb8_image_t::view_t &mask_view, 
                          const rgb8_image_t::view_t &mask_complement_view, 
                          std::vector<Vector3f> warped_corners) {
-  printf("mask_view height = %ld, width = %ld\n", mask_view.height(), mask_view.width());
+  // printf("mask_view height = %ld, width = %ld\n", mask_view.height(), mask_view.width());
   for (int y = 0; y < mask_view.height(); ++y) {
     auto mask_row_iterator = mask_view.row_begin(y);
     auto mask_complement_row_iterator = mask_complement_view.row_begin(y);
@@ -220,23 +220,23 @@ void superimpose_image(const rgb8_image_t::view_t &masked,
                        const rgb8_image_t::view_t &mask_complement,
                        const rgb8_image_t::view_t &background) {
   for (int y = 0; y < masked.height(); ++y) {
-    printf("y=%d\n", y);
+    // printf("y=%d\n", y);
     auto masked_row_it = masked.row_begin(y);
     auto mask_row_it = mask.row_begin(y);
     auto transformed_row_it = transformed.row_begin(y);
     auto mask_complement_row_it = mask_complement.row_begin(y);
     auto background_row_it = background.row_begin(y);
     for (int x = 0; x < masked.width(); ++x) {
-      printf("\tx=%d\n", x);
+      // printf("\tx=%d\n", x);
       masked_row_it[x][0] = (mask_row_it[x][0]/255 * transformed_row_it[x][0] + 
         mask_complement_row_it[x][0]/255 * background_row_it[x][0]);
       masked_row_it[x][1] = (mask_row_it[x][1]/255 * transformed_row_it[x][1] + 
         mask_complement_row_it[x][1]/255 * background_row_it[x][1]);
-      printf("\tshould be %d\n", (mask_row_it[x][2]/255 * transformed_row_it[x][2] + 
-        mask_complement_row_it[x][2]/255 * background_row_it[x][2]));
+      // printf("\tshould be %d\n", (mask_row_it[x][2]/255 * transformed_row_it[x][2] + 
+      //   mask_complement_row_it[x][2]/255 * background_row_it[x][2]));
       masked_row_it[x][2] = (mask_row_it[x][2]/255 * transformed_row_it[x][2] + 
         mask_complement_row_it[x][2]/255 * background_row_it[x][2]);
-      printf("\tpixel value=%d\n", masked_row_it[x][2]);
+      // printf("\tpixel value=%d\n", masked_row_it[x][2]);
     }
   }
 }
@@ -288,6 +288,7 @@ flex_dict build_annotation( ParameterSweep *parameter_sampler,
                                           normalize(mat * bottom_right_corner)
                                          };
   parameter_sampler->set_warped_corners(warped_corners);
+
 
   float min_x = std::numeric_limits<float>::max();
   float max_x = std::numeric_limits<float>::min();
@@ -422,8 +423,8 @@ gl_sframe _augment_data(gl_sframe data,
       printf("31\n");
       // Superposition:
       // mask * warped + (1-mask) * background
-      superimpose_image(view(masked), view(mask), view(transformed), 
-                                      view(mask_complement), background_view);
+      // superimpose_image(view(masked), view(mask), view(transformed), 
+      //                                 view(mask_complement), background_view);
       printf("32\n");
       // rgb8_image_t masked = mask * transformed + mask_complement * background;
       write_view("masked.jpg", view(masked), jpeg_tag());
