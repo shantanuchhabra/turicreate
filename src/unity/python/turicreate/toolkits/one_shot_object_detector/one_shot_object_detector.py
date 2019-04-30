@@ -8,10 +8,9 @@ def create(dataset, target, backgrounds, feature=None, batch_size=0, max_iterati
     model = _extensions.one_shot_object_detector()
     if seed is None: seed = _random.randint(0, (1<<31)-1)
     # Option arguments to pass in to C++ Object Detector, if we use it:
-    # {'mlmodel_path':'/Users/schhabra/Desktop/apple/turicreate/darknet.mlmodel', 'max_iterations' : 25}
+    # {'mlmodel_path':'darknet.mlmodel', 'max_iterations' : 25}
     # TODO: backgrounds should be loaded internally
     augmented_data = model.augment(dataset, target, backgrounds, seed)
-    import pdb; pdb.set_trace()
     model = _tc.object_detector.create(augmented_data)
     return OneShotObjectDetector(model)
 

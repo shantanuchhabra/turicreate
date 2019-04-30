@@ -34,6 +34,9 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
+// This is an important import, please note.
+#include <image/image_util_impl.hpp>
+
 #define BLACK rgb8_pixel_t(0,0,0)
 #define WHITE rgb8_pixel_t(255,255,255)
 
@@ -81,10 +84,8 @@ public:
     return transform_;
   }
 
-  void set_warped_corners(std::vector<Vector3f> warped_corners) {
-    for (int i=0; i<4; i++) {
-      warped_corners_[i] = warped_corners[i];
-    }
+  void set_warped_corners(const std::vector<Vector3f> &warped_corners) {
+    warped_corners_ = warped_corners;
   }
 
   std::vector<Vector3f> get_warped_corners() {
@@ -170,10 +171,10 @@ bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
   float max_x = std::numeric_limits<float>::min();
   float min_y = std::numeric_limits<float>::max();
   float max_y = std::numeric_limits<float>::min();
-  std::cout << "get ready for corners" << std::endl;
+  // std::cout << "get ready for corners" << std::endl;
   for (auto corner: warped_corners) {
-    std::cout << "corner" << std::endl;
-    std::cout << corner << std::endl;
+    // std::cout << "corner" << std::endl;
+    // std::cout << corner << std::endl;
     min_x = std::min(min_x, corner[0]);
     max_x = std::max(max_x, corner[0]);
     min_y = std::min(min_y, corner[1]);
@@ -232,8 +233,7 @@ void superimpose_image(const rgb8_image_t::view_t &masked,
         mask_complement_row_it[x][0]/255 * background_row_it[x][0]);
       masked_row_it[x][1] = (mask_row_it[x][1]/255 * transformed_row_it[x][1] + 
         mask_complement_row_it[x][1]/255 * background_row_it[x][1]);
-      // printf("\tshould be %d\n", (mask_row_it[x][2]/255 * transformed_row_it[x][2] + 
-      //   mask_complement_row_it[x][2]/255 * background_row_it[x][2]));
+      // printf("\tshould be ");
       masked_row_it[x][2] = (mask_row_it[x][2]/255 * transformed_row_it[x][2] + 
         mask_complement_row_it[x][2]/255 * background_row_it[x][2]);
       // printf("\tpixel value=%d\n", masked_row_it[x][2]);
@@ -250,12 +250,12 @@ static std::map<std::string,size_t> generate_column_index_map(
     return index_map;
 }
 
-flex_dict build_annotation( ParameterSweep *parameter_sampler,
+flex_dict build_annotation( ParameterSweep &parameter_sampler,
                             int object_width,
                             int object_height,
                             long seed) {
 
-  parameter_sampler->sample(seed);
+  parameter_sampler.sample(seed);
 
   int original_top_left_x = 0;
   int original_top_left_y = 0;
@@ -280,15 +280,14 @@ flex_dict build_annotation( ParameterSweep *parameter_sampler,
     return corner;
   };
   
-  Matrix3f mat = parameter_sampler->get_transform();
+  Matrix3f mat = parameter_sampler.get_transform();
 
   std::vector<Vector3f> warped_corners = {normalize(mat * top_left_corner)   ,
                                           normalize(mat * top_right_corner)  ,
                                           normalize(mat * bottom_left_corner),
                                           normalize(mat * bottom_right_corner)
                                          };
-  parameter_sampler->set_warped_corners(warped_corners);
-
+  parameter_sampler.set_warped_corners(warped_corners);
 
   float min_x = std::numeric_limits<float>::max();
   float max_x = std::numeric_limits<float>::min();
@@ -321,53 +320,37 @@ gl_sframe _augment_data(gl_sframe data,
                         std::string target_column_name,
                         gl_sarray backgrounds,
                         long seed) {
-  // TODO: Get input image from the data sframe.
-  // TODO: Use backgrounds from the background SFrame.
-  // TODO: Generalize 1024 and 676 to be the width and height of the image 
-  //       passed in.
-  // int n = 1;
-  printf("1\n");
   auto column_index_map = generate_column_index_map(data.column_names());
-  printf("2\n");
   std::vector<flexible_type> annotations, images;
-  printf("3\n");
   for (const auto& row: data.range_iterator()) {
-    printf("4\n");
     flex_image object = row[column_index_map[image_column_name]].to<flex_image>();
-    printf("5\n");
     std::string label = row[column_index_map[target_column_name]].to<flex_string>();
-    printf("6\n");
     int object_width = object.m_width;
-    printf("7\n");
     int object_height = object.m_height;
-    printf("8\n");
-    // int object_channels = object.m_channels;
+    if (!(object.is_decoded())) {
+      decode_image_inplace(object);
+    }
     int row_number = -1;
-    printf("9\n");
     for (const auto& background_ft: backgrounds.range_iterator()) {
-      printf("10\n");
       row_number++;
-      printf("11\n");
-      flex_image background = background_ft.to<flex_image>();
-      printf("12\n");
-      int background_width = background.m_width;
-      printf("13\n");
-      int background_height = background.m_height;
-      printf("14\n");
-      // int background_channels = background.m_channels;
-
+      flex_image flex_background = background_ft.to<flex_image>();
+      if (!(flex_background.is_decoded())) {
+        decode_image_inplace(flex_background);
+      }
+      int background_width = flex_background.m_width;
+      int background_height = flex_background.m_height;
+      
       ParameterSweep parameter_sampler = ParameterSweep(background_width, 
                                                         background_height,
                                                         (background_width-object_width)/2,
                                                         (background_height-object_height)/2);
 
-      printf("15\n");
-      flex_dict annotation = build_annotation(&parameter_sampler, 
+      flex_dict annotation = build_annotation(parameter_sampler, 
                                               object_width, object_height, 
                                               seed+row_number);
 
-      printf("16\n");
-
+      std::vector<Vector3f> corners = parameter_sampler.get_warped_corners();
+      
       // create a gil view of the src buffer
       rgb8_image_t::view_t starter_image_view = interleaved_view(
         object_width,
@@ -375,71 +358,40 @@ gl_sframe _augment_data(gl_sframe data,
         (rgb8_pixel_t*) (object.get_image_data()),
         3 * object_width // row length in bytes
         );
-      printf("17\n");
+      
+      DASSERT_EQ(flex_background.m_channels, 3);
+      DASSERT_TRUE(flex_background.get_image_data() != nullptr);
+      DASSERT_TRUE(object.is_decoded());
+      DASSERT_TRUE(flex_background.is_decoded());
 
       rgb8_image_t::view_t background_view = interleaved_view(
         background_width,
         background_height,
-        (rgb8_pixel_t*) (background.get_image_data()),
+        (rgb8_pixel_t*)(flex_background.get_image_data()),
         3 * background_width // row length in bytes
         );
-      printf("18\n");
-
-      rgb8_image_t starter_image(rgb8_image_t::point_t(background_view.dimensions()));
-      printf("19\n");
-      // TODO: Don't hardcode this. Use interleaved_view!
-      // read_image("in-affine.jpg", starter_image, jpeg_tag());
-      // TODO: Don't hardcode this. Fetch this from the backgrounds SFrame in a 
-      // loop.
-      // read_image("background.jpg", background, jpeg_tag());
-
+      
       matrix3x3<double> M(parameter_sampler.get_transform().inverse());
-      printf("20\n");
       rgb8_image_t mask(rgb8_image_t::point_t(background_view.dimensions()));
-      printf("21\n");
       rgb8_image_t mask_complement(rgb8_image_t::point_t(background_view.dimensions()));
-      printf("22\n");
       // mask_complement = 1 - mask
       fill_pixels(view(mask), BLACK);
-      printf("23\n");
       fill_pixels(view(mask_complement), WHITE);
-      printf("24\n");
       color_quadrilateral(view(mask), view(mask_complement), 
         parameter_sampler.get_warped_corners());
-      printf("25\n");
-      write_view("mask.jpg", view(mask), jpeg_tag());
-      printf("26\n");
-
+      
       rgb8_image_t transformed(rgb8_image_t::point_t(background_view.dimensions()));
-      printf("27\n");      
       fill_pixels(view(transformed), WHITE);
-      printf("28\n");
-      resample_pixels(const_view(starter_image), view(transformed), M, bilinear_sampler());
-      printf("29\n");      
-
+      resample_pixels(starter_image_view, view(transformed), M, bilinear_sampler());
+      
       rgb8_image_t masked(rgb8_image_t::point_t(background_view.dimensions()));
-      printf("30\n");
       fill_pixels(view(masked), WHITE);
-      printf("31\n");
       // Superposition:
       // mask * warped + (1-mask) * background
-      // superimpose_image(view(masked), view(mask), view(transformed), 
-      //                                 view(mask_complement), background_view);
-      printf("32\n");
-      // rgb8_image_t masked = mask * transformed + mask_complement * background;
-      write_view("masked.jpg", view(masked), jpeg_tag());
-      printf("33\n");
-
-      // TODO: Write these images into an SFrame that this function can return.
-      std::string output_filename = "out-affine-from-sframe.jpg";
-      printf("34\n");
-      write_view(output_filename, view(transformed), jpeg_tag());
-      printf("35\n");
-      
+      superimpose_image(view(masked), view(mask), view(transformed), 
+                                      view(mask_complement), background_view);
       annotations.push_back(annotation);
-      printf("36\n");
-      images.push_back(flex_image(transformed));
-      printf("37\n");
+      images.push_back(flex_image(masked));
     }
   }
 
@@ -447,9 +399,7 @@ gl_sframe _augment_data(gl_sframe data,
     {"annotation", annotations},
     {"image", images}
   };
-  printf("38\n");
   gl_sframe augmented_data_out = gl_sframe(augmented_data);
-  printf("39\n");
   return augmented_data_out;
 }
 
