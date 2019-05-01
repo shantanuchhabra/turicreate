@@ -171,10 +171,7 @@ bool is_in_quadrilateral(int x, int y, std::vector<Vector3f> warped_corners) {
   float max_x = std::numeric_limits<float>::min();
   float min_y = std::numeric_limits<float>::max();
   float max_y = std::numeric_limits<float>::min();
-  // std::cout << "get ready for corners" << std::endl;
   for (auto corner: warped_corners) {
-    // std::cout << "corner" << std::endl;
-    // std::cout << corner << std::endl;
     min_x = std::min(min_x, corner[0]);
     max_x = std::max(max_x, corner[0]);
     min_y = std::min(min_y, corner[1]);
