@@ -7,22 +7,6 @@
 
 namespace turi{
 
-image_type::image_type(boost::gil::rgb8_image_t gil_image) {
-  // typedef bit_aligned_image3_type<1,1,1, boost::gil::rgb8_layout_t>::type image_t;
-  auto it = view(gil_image).begin();
-  auto data = (uint8_t*) &boost::gil::at_c<0>(*it);
-  boost::gil::rgb8_image_t::const_view_t view = const_view(gil_image);
-  // const char* buffer = view.begin().x();
-  m_height = gil_image.height();
-  m_width = gil_image.width();
-  m_channels = boost::gil::num_channels<boost::gil::rgb8_image_t>();
-  m_image_data_size = m_height * m_width * m_channels;
-  m_version = IMAGE_TYPE_CURRENT_VERSION;
-  m_format = Format::RAW_ARRAY;
-  m_image_data.reset(new char[m_image_data_size]);
-  memcpy(&m_image_data[0], data, m_image_data_size);
-}
-
 image_type::image_type(const char* image_data, size_t height, size_t width, size_t channels, size_t image_data_size, int version, int format){
   m_image_data.reset(new char[image_data_size]);
   memcpy(&m_image_data[0], image_data, image_data_size);
