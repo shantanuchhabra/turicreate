@@ -1,5 +1,4 @@
 dist: trusty
-sudo: required
 cache:
   directories:
     - $HOME/.ccache
@@ -62,4 +61,3 @@ script:
 
   # See the changes in ccache
   - ccache -s
-

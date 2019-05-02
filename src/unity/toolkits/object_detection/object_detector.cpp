@@ -12,7 +12,6 @@
 #include <cstdio>
 #include <iostream>
 #include <limits>
-#include <numeric>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -90,19 +89,6 @@ const std::vector<std::pair<float, float>>& anchor_boxes() {
       });
   return *default_boxes;
 };
-
-// For computing average precision averaged over IOU thresholds from 50% to 90%,
-// at intervals of 5%, as popularized by COCO.
-std::vector<float> iou_thresholds_for_evaluation() {
-
-  std::vector<float> result;
-
-  for (float x = 50.f; x < 100.f; x += 5.f) {
-    result.push_back(x / 100.f);
-  }
-
-  return result;
-}
 
 // These are the fixed values that the Python implementation currently passes
 // into TCMPS.
@@ -279,6 +265,7 @@ void object_detector::load_version(iarchive& iarc, size_t version) {}
 void object_detector::train(gl_sframe data,
                             std::string annotations_column_name,
                             std::string image_column_name,
+                            variant_type validation_data,
                             std::map<std::string, flexible_type> opts) {
 
   // Begin printing progress.
@@ -316,12 +303,26 @@ void object_detector::train(gl_sframe data,
     trained_weights[key] = kv.second;
   }
   nn_spec_->update_params(trained_weights);
+
+  // Compute training and validation metrics.
+  gl_sframe val_data;
+  if (variant_is<gl_sframe>(validation_data)) {
+    val_data = variant_get_value<gl_sframe>(validation_data);
+  }
+  update_model_metrics(data, val_data);
 }
 
 variant_map_type object_detector::evaluate(
     gl_sframe data, std::string metric,
     std::map<std::string, flexible_type> opts) {
+  return perform_evaluation(std::move(data), std::move(metric));
+}
 
+// TODO: Should accept model_backend as an optional argument to avoid
+// instantiating a new backend during training. Or just check to see if an
+// existing backend is available?
+variant_map_type object_detector::perform_evaluation(gl_sframe data,
+                                                     std::string metric) {
   std::vector<std::string> metrics;
   static constexpr char AP[] = "average_precision";
   static constexpr char MAP[] = "mean_average_precision";
@@ -344,13 +345,15 @@ variant_map_type object_detector::evaluate(
   
   std::string image_column_name = read_state<flex_string>("feature");
   std::string annotations_column_name = read_state<flex_string>("annotations");
+  flex_list class_labels = read_state<flex_list>("classes");
   size_t batch_size = static_cast<size_t>(options.value("batch_size"));
   float iou_threshold =
       read_state<flex_float>("non_maximum_suppression_threshold");
 
   // Bind the data to a data iterator.
   std::unique_ptr<data_iterator> data_iter = create_iterator(
-      data, annotations_column_name, image_column_name, /* repeat */ false);
+      data, std::vector<std::string>(class_labels.begin(), class_labels.end()),
+      /* repeat */ false);
 
   // Instantiate the compute context.
   std::unique_ptr<compute_context> ctx = create_compute_context();
@@ -369,7 +372,7 @@ variant_map_type object_detector::evaluate(
 
   // Instantiate the NN backend.
   // For each anchor box, we have 4 bbox coords + 1 conf + one-hot class labels
-  int num_outputs_per_anchor = 5 + read_state<int>("num_classes");
+  int num_outputs_per_anchor = 5 + static_cast<int>(class_labels.size());
   int num_output_channels = num_outputs_per_anchor * anchor_boxes().size();
   std::unique_ptr<model_backend> model = ctx->create_object_detector(
       /* n */     options.value("batch_size"),
@@ -383,8 +386,7 @@ variant_map_type object_detector::evaluate(
       get_model_params());
 
   // Initialize the metric calculator
-  average_precision_calculator calculator(
-      data_iter->class_labels().size(), iou_thresholds_for_evaluation());
+  average_precision_calculator calculator(class_labels);
 
   // To support double buffering, use a queue of pending inference results.
   std::queue<image_augmenter::result> pending_batches;
@@ -455,53 +457,23 @@ variant_map_type object_detector::evaluate(
 
   // Compute the average precision (area under the precision-recall curve) for
   // each combination of IOU threshold and class label.
-  flex_list class_labels = read_state<flex_list>("classes");
-  std::vector<std::map<float,float>> raw_average_precisions =
-      calculator.evaluate();
-  ASSERT_EQ(class_labels.size(), raw_average_precisions.size());
+  variant_map_type result_map = calculator.evaluate();
 
-  std::vector<float> average_precision_50(class_labels.size());
-  std::vector<float> average_precision(class_labels.size());
-  for (size_t i = 0; i < class_labels.size(); ++i) {
-
-    // Extract the average precision for this class at IOU threshold 50%.
-    average_precision_50[i] = raw_average_precisions[i].at(0.5f);
-
-    // Compute the average precision for this class averaged over all the IOU
-    // threshold.
-    float sum = 0.f;
-    for (const auto& threshold_and_ap : raw_average_precisions[i]) {
-      sum += threshold_and_ap.second;
-    }
-    average_precision[i] = sum /= raw_average_precisions[i].size();
+  // Trim undesired metrics from the final result. (For consistency with other
+  // toolkits. In this case, almost all of the work is shared across metrics.)
+  if (std::find(metrics.begin(), metrics.end(), AP) == metrics.end()) {
+    result_map.erase(AP);
+  }
+  if (std::find(metrics.begin(), metrics.end(), AP50) == metrics.end()) {
+    result_map.erase(AP50);
+  }
+  if (std::find(metrics.begin(), metrics.end(), MAP50) == metrics.end()) {
+    result_map.erase(MAP50);
+  }
+  if (std::find(metrics.begin(), metrics.end(), MAP) == metrics.end()) {
+    result_map.erase(MAP);
   }
 
-  // Store the requested summary statistics.
-  auto create_dict = [&class_labels](const std::vector<float>& v) {
-    variant_map_type class_map;
-    for (size_t i = 0; i < class_labels.size(); ++i) {
-      class_map[class_labels[i]] = v[i];
-    }
-    return class_map;
-  };
-  auto compute_mean = [](const std::vector<float>& v) {
-    return std::accumulate(v.begin(), v.end(), 0.f) / v.size();
-  };
-  variant_map_type result_map;
-  
-  if (std::find(metrics.begin(), metrics.end(), AP) != metrics.end()) {
-    result_map[AP] = create_dict(average_precision);
-  }
-  if (std::find(metrics.begin(), metrics.end(), AP50) != metrics.end()) {
-    result_map[AP50] = create_dict(average_precision_50);
-  }
-  if (std::find(metrics.begin(), metrics.end(), MAP50) != metrics.end()) {
-    result_map[MAP50] = compute_mean(average_precision_50);
-  }
-  if (std::find(metrics.begin(), metrics.end(), MAP) != metrics.end()) {
-    result_map[MAP] = compute_mean(average_precision);
-  }
-  
   return result_map;
 }
 
@@ -664,13 +636,14 @@ std::shared_ptr<MLModelWrapper> object_detector::export_to_coreml(
 }
 
 std::unique_ptr<data_iterator> object_detector::create_iterator(
-    gl_sframe data, std::string annotations_column_name,
-    std::string image_column_name, bool repeat) const {
-
+    gl_sframe data, std::vector<std::string> class_labels, bool repeat) const
+{
   data_iterator::parameters iterator_params;
   iterator_params.data = std::move(data);
-  iterator_params.annotations_column_name = std::move(annotations_column_name);
-  iterator_params.image_column_name = std::move(image_column_name);
+  iterator_params.annotations_column_name =
+      read_state<flex_string>("annotations");
+  iterator_params.image_column_name = read_state<flex_string>("feature");
+  iterator_params.class_labels = std::move(class_labels);
   iterator_params.repeat = repeat;
 
   return std::unique_ptr<data_iterator>(
@@ -686,10 +659,23 @@ void object_detector::init_train(gl_sframe data,
                                  std::string annotations_column_name,
                                  std::string image_column_name,
                                  std::map<std::string, flexible_type> opts) {
+  // Record the relevant column names upfront, for use in create_iterator. Also
+  // values fixed by this version of the toolkit.
+  std::array<flex_int, 3> input_image_shape =  // Using CoreML CHW format.
+      {{3, GRID_SIZE * SPATIAL_REDUCTION, GRID_SIZE * SPATIAL_REDUCTION}};
+  add_or_update_state({
+      { "annotations", annotations_column_name },
+      { "feature", image_column_name },
+      { "input_image_shape", flex_list(input_image_shape.begin(),
+                                       input_image_shape.end()) },
+      { "model", "darknet-yolo" },
+      { "non_maximum_suppression_threshold",
+        DEFAULT_NON_MAXIMUM_SUPPRESSION_THRESHOLD },
+  });
 
   // Bind the data to a data iterator.
   training_data_iterator_ = create_iterator(
-      data, annotations_column_name, image_column_name, /* repeat */ true);
+      data, /* expected class_labels */ {}, /* repeat */ true);
 
   // Instantiate the compute context.
   training_compute_context_ = create_compute_context();
@@ -716,17 +702,8 @@ void object_detector::init_train(gl_sframe data,
   // Set additional model fields.
   const std::vector<std::string>& classes =
       training_data_iterator_->class_labels();
-  std::array<flex_int, 3> input_image_shape =  // Using CoreML CHW format.
-      {{3, GRID_SIZE * SPATIAL_REDUCTION, GRID_SIZE * SPATIAL_REDUCTION}};
   add_or_update_state({
-      { "annotations", annotations_column_name },
       { "classes", flex_list(classes.begin(), classes.end()) },
-      { "feature", image_column_name },
-      { "input_image_shape", flex_list(input_image_shape.begin(),
-                                       input_image_shape.end()) },
-      { "model", "darknet-yolo" },
-      { "non_maximum_suppression_threshold",
-        DEFAULT_NON_MAXIMUM_SUPPRESSION_THRESHOLD },
       { "num_bounding_boxes", training_data_iterator_->num_instances() },
       { "num_classes", training_data_iterator_->class_labels().size() },
       { "num_examples", data.size() },
@@ -914,6 +891,29 @@ void object_detector::wait_for_training_batches(size_t max_pending) {
           iteration_idx, iteration_idx + 1, loss, progress_time());
     }
   }
+}
+
+void object_detector::update_model_metrics(gl_sframe data,
+                                           gl_sframe validation_data) {
+  std::map<std::string, variant_type> metrics;
+
+  // Compute training metrics.
+  variant_map_type training_metrics = perform_evaluation(data, "all");
+  for (const auto& kv : training_metrics) {
+    metrics["training_" + kv.first] = kv.second;
+  }
+
+  // Compute validation metrics if necessary.
+  if (!validation_data.empty()) {
+    variant_map_type validation_metrics = perform_evaluation(validation_data,
+                                                             "all");
+    for (const auto& kv : validation_metrics) {
+      metrics["validation_" + kv.first] = kv.second;
+    }
+  }
+
+  // Add metrics to model state.
+  add_or_update_state(metrics);
 }
 
 }  // object_detection

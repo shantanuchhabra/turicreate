@@ -21,7 +21,6 @@ from turicreate.toolkits._main import ToolkitError as _ToolkitError
 from turicreate.toolkits._model import PythonProxy as _PythonProxy
 from turicreate import config as _tc_config
 from .._internal_utils import _mac_ver
-from .. import _mxnet_utils
 from .. import _pre_trained_models
 from .. import _image_feature_extractor
 from ._evaluation import Evaluation as _Evaluation
@@ -672,6 +671,7 @@ class ImageClassifier(_CustomModel):
         extracted_features[self.target] = dataset[self.target]
         
         metrics = self.classifier.evaluate(extracted_features, metric=metric, with_predictions=True)
+
         predictions = metrics["predictions"]["probs"]
         state = self.__proxy__.get_state()
         labels = state["classes"]
@@ -727,7 +727,7 @@ class ImageClassifier(_CustomModel):
 
         def hclusterSort(vectors, dist_fn):
             distances = []
-            vecs = vectors[:]
+            vecs = list(vectors)[:]
             for i in range(0, len(vecs)):
                 for j in range(i+1, len(vecs)):
                     distances.append({'from': vecs[i], 'to': vecs[j], 'dist': dist_fn(vecs[i], vecs[j])})
@@ -780,6 +780,7 @@ class ImageClassifier(_CustomModel):
             ['predicted_label', 'entropy', 'confidence', 'relative_confidence'])
         extended_test = extended_test.add_column(extended_test.apply(lambda d: d['label'] == d['predicted_label']), 'correct')
 
+        evaluation_result['model_name'] = state['model']
         # Calculate the confusion matrix
         sf_conf_mat = get_confusion_matrix(extended_test, labels)
         confidence_threshold = 0.5
@@ -787,13 +788,8 @@ class ImageClassifier(_CustomModel):
         evaluation_result['confidence_threshold'] = confidence_threshold
         evaluation_result['hesitant_threshold'] = hesitant_threshold
         evaluation_result['confidence_metric_for_threshold'] = 'relative_confidence'
-        sf_hesitant_conf_mat = get_confusion_matrix(extended_test[extended_test[evaluation_result['confidence_metric_for_threshold']] < hesitant_threshold], labels)
-        sf_confidently_wrong_conf_mat = get_confusion_matrix(extended_test[(extended_test[evaluation_result['confidence_metric_for_threshold']] > confidence_threshold) & (extended_test['correct']==True)], labels)
 
         evaluation_result['conf_mat'] = list(sf_conf_mat)
-        evaluation_result['hesitant_conf_mat'] = list(sf_hesitant_conf_mat)
-        evaluation_result['confidently_wrong_conf_mat'] = list(sf_confidently_wrong_conf_mat)
-
         
         # Get sorted labels (sorted by hCluster)
         vectors = map(lambda l: {'name': l, 'pos':list(sf_conf_mat[sf_conf_mat['target_label']==l].sort('predicted_label')['norm_prob'])},
@@ -811,10 +807,11 @@ class ImageClassifier(_CustomModel):
         evaluation_result['labels'] = labels
         
         extended_test = extended_test.add_row_number('__idx').rename({'label': 'target_label'})
+
         evaluation_result['test_data'] = extended_test
-
+        evaluation_result['feature'] = self.feature
+        
         return _Evaluation(evaluation_result)
-
 
     def _extract_features(self, dataset, verbose=False, batch_size=64):
         return _tc.SFrame({

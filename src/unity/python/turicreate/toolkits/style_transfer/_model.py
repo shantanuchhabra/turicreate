@@ -68,9 +68,9 @@ class ResidualBlock(HybridBlock):
         super(ResidualBlock, self).__init__()
 
         with self.name_scope():
-            self.conv1 = _nn.Conv2D(128, 3, 1, 1, in_channels=128, use_bias=False)
+            self.conv1 = _nn.Conv2D(128, 3, 1, 0, in_channels=128, use_bias=False)
             self.inst_norm1 = InstanceNorm(in_channels=128, num_styles=num_styles, batch_size=batch_size)
-            self.conv2 = _nn.Conv2D(128, 3, 1, 1, in_channels=128, use_bias=False)
+            self.conv2 = _nn.Conv2D(128, 3, 1, 0, in_channels=128, use_bias=False)
             self.inst_norm2 = InstanceNorm(in_channels=128, num_styles=num_styles, batch_size=batch_size)
 
         self._batch_size = batch_size
@@ -86,11 +86,13 @@ class ResidualBlock(HybridBlock):
         self._batch_size = batch_size
 
     def hybrid_forward(self, F, x, style_idx):
-        h1 = self.conv1(x)
+        h1 = F.pad(x, mode="reflect", pad_width=(0,0,0,0,1,1,1,1))
+        h1 = self.conv1(h1)
         h1 = self.inst_norm1(h1, style_idx)
         h1 = F.Activation(h1, 'relu')
 
-        h2 = self.conv2(h1)
+        h2 = F.pad(h1, mode="reflect", pad_width=(0,0,0,0,1,1,1,1))
+        h2 = self.conv2(h2)
         h2 = self.inst_norm2(h2, style_idx)
 
         return x + h2
@@ -111,13 +113,13 @@ class Transformer(HybridBlock):
         self.scale255 = False
 
         with self.name_scope():
-            self.conv1 = _nn.Conv2D(32, 9, 1, 4, in_channels=3, use_bias=False)
+            self.conv1 = _nn.Conv2D(32, 9, 1, 0, in_channels=3, use_bias=False)
             self.inst_norm1 = InstanceNorm(in_channels=32, num_styles=num_styles, batch_size=batch_size)
 
-            self.conv2 = _nn.Conv2D(64, 3, 2, 1, in_channels=32, use_bias=False)
+            self.conv2 = _nn.Conv2D(64, 3, 2, 0, in_channels=32, use_bias=False)
             self.inst_norm2 = InstanceNorm(in_channels=64, num_styles=num_styles, batch_size=batch_size)
 
-            self.conv3 = _nn.Conv2D(128, 3, 2, 1, in_channels=64, use_bias=False)
+            self.conv3 = _nn.Conv2D(128, 3, 2, 0, in_channels=64, use_bias=False)
             self.inst_norm3 = InstanceNorm(in_channels=128, num_styles=num_styles, batch_size=batch_size)
 
             self.residual1 = block(num_styles, batch_size=batch_size)
@@ -126,13 +128,13 @@ class Transformer(HybridBlock):
             self.residual4 = block(num_styles, batch_size=batch_size)
             self.residual5 = block(num_styles, batch_size=batch_size)
 
-            self.decoder_conv1 = _nn.Conv2D(64, 3, 1, 1, in_channels=128, use_bias=False)
+            self.decoder_conv1 = _nn.Conv2D(64, 3, 1, 0, in_channels=128, use_bias=False)
             self.inst_norm4 = InstanceNorm(in_channels=64, num_styles=num_styles, batch_size=batch_size)
 
-            self.decoder_conv2 = _nn.Conv2D(32, 3, 1, 1, in_channels=64, use_bias=False)
+            self.decoder_conv2 = _nn.Conv2D(32, 3, 1, 0, in_channels=64, use_bias=False)
             self.inst_norm5 = InstanceNorm(in_channels=32, num_styles=num_styles, batch_size=batch_size)
 
-            self.decoder_conv3 = _nn.Conv2D(3, 9, 1, 4, in_channels=32, use_bias=False)
+            self.decoder_conv3 = _nn.Conv2D(3, 9, 1, 0, in_channels=32, use_bias=False)
             self.inst_norm6 = InstanceNorm(in_channels=3, num_styles=num_styles, batch_size=batch_size)
 
     @property
@@ -151,15 +153,18 @@ class Transformer(HybridBlock):
             layer.batch_size = batch_size
 
     def hybrid_forward(self, F, X, style_idx):
-        h1 = self.conv1(X)
+        h1 = F.pad(X, mode="reflect", pad_width=(0,0,0,0,4,4,4,4))
+        h1 = self.conv1(h1)
         h1 = self.inst_norm1(h1, style_idx)
         h1 = F.Activation(h1, 'relu')
 
-        h2 = self.conv2(h1)
+        h2 = F.pad(h1, mode="reflect", pad_width=(0,0,0,0,1,1,1,1))
+        h2 = self.conv2(h2)
         h2 = self.inst_norm2(h2, style_idx)
         h2 = F.Activation(h2, 'relu')
 
-        h3 = self.conv3(h2)
+        h3 = F.pad(h2, mode="reflect", pad_width=(0,0,0,0,1,1,1,1))
+        h3 = self.conv3(h3)
         h3 = self.inst_norm3(h3, style_idx)
         h3 = F.Activation(h3, 'relu')
 
@@ -170,16 +175,19 @@ class Transformer(HybridBlock):
         r5 = self.residual5(r4, style_idx)
 
         d1 = F.UpSampling(r5, scale=2, sample_type='nearest')
+        d1 = F.pad(d1, mode="reflect", pad_width=(0,0,0,0,1,1,1,1))
         d1 = self.decoder_conv1(d1)
         d1 = self.inst_norm4(d1, style_idx)
         d1 = F.Activation(d1, 'relu')
 
         d2 = F.UpSampling(d1, scale=2, sample_type='nearest')
+        d2 = F.pad(d2, mode="reflect", pad_width=(0,0,0,0,1,1,1,1))
         d2 = self.decoder_conv2(d2)
         d2 = self.inst_norm5(d2, style_idx)
         d2 = F.Activation(d2, 'relu')
 
-        d3 = self.decoder_conv3(d2)
+        d3 = F.pad(d2, mode="reflect", pad_width=(0,0,0,0,4,4,4,4))
+        d3 = self.decoder_conv3(d3)
         d3 = self.inst_norm6(d3, style_idx)
 
         z = F.Activation(d3, 'sigmoid')
