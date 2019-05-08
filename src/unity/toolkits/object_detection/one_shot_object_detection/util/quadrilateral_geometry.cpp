@@ -2,6 +2,8 @@
 
 #define BLACK boost::gil::rgb8_pixel_t(0,0,0)
 #define WHITE boost::gil::rgb8_pixel_t(255,255,255)
+#define RGBA_BLACK boost::gil::rgba8_pixel_t(0,0,0,255)
+#define RGBA_WHITE boost::gil::rgba8_pixel_t(255,255,255,0)
 
 namespace turi {
 namespace one_shot_object_detection {
@@ -48,16 +50,16 @@ bool is_in_quadrilateral(size_t x, size_t y,
   return (num_true == 2);
 }
 
-void color_quadrilateral(const boost::gil::rgb8_image_t::view_t &mask_view, 
-                         const boost::gil::rgb8_image_t::view_t &mask_complement_view, 
+void color_quadrilateral(const boost::gil::rgba8_image_t::view_t &mask_view, 
+                         const boost::gil::rgba8_image_t::view_t &mask_complement_view, 
                          const std::vector<Eigen::Vector3f> &warped_corners) {
   for (int y = 0; y < mask_view.height(); ++y) {
     auto mask_row_iterator = mask_view.row_begin(y);
     auto mask_complement_row_iterator = mask_complement_view.row_begin(y);
     for (int x = 0; x < mask_view.width(); ++x) {
       if (is_in_quadrilateral(x, y, warped_corners)) {
-        mask_row_iterator[x] = WHITE;
-        mask_complement_row_iterator[x] = BLACK;
+        mask_row_iterator[x] = RGBA_WHITE;
+        mask_complement_row_iterator[x] = RGBA_BLACK;
       }
     }
   }

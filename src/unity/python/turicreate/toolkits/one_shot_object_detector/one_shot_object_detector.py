@@ -25,6 +25,7 @@ def create(dataset,
     # Option arguments to pass in to C++ Object Detector, if we use it:
     # {'mlmodel_path':'darknet.mlmodel', 'max_iterations' : 25}
     augmented_data = model.augment(dataset, target, backgrounds, {"seed":seed})
+    import pdb; pdb.set_trace()
     od_model = _tc.object_detector.create(augmented_data)
     state = {'detector':od_model}
     return OneShotObjectDetector(state)
