@@ -21,50 +21,16 @@
 
 #include <unity/toolkits/object_detection/object_detector.hpp>
 #include <unity/toolkits/object_detection/one_shot_object_detection/one_shot_object_detector.hpp>
+#include <unity/toolkits/object_detection/one_shot_object_detection/util/color_convert.hpp>
 #include <unity/toolkits/object_detection/one_shot_object_detection/util/mapping_function.hpp>
 #include <unity/toolkits/object_detection/one_shot_object_detection/util/parameter_sampler.hpp>
 #include <unity/toolkits/object_detection/one_shot_object_detection/util/quadrilateral_geometry.hpp>
-#include <unity/toolkits/object_detection/one_shot_object_detection/util/color_convert.hpp>
-
-#define BLACK boost::gil::rgb8_pixel_t(0,0,0)
-#define WHITE boost::gil::rgb8_pixel_t(255,255,255)
-// alpha: 0 (fully transparent) to 255 (fully opaque)
-// mask is white on black
-// mask * warped + (1-mask) * background
-#define RGBA_BLACK boost::gil::rgba8_pixel_t(0,0,0,255)
-#define RGBA_WHITE boost::gil::rgba8_pixel_t(255,255,255,0)
+#include <unity/toolkits/object_detection/one_shot_object_detection/util/superposition.hpp>
 
 namespace turi {
 namespace one_shot_object_detection {
 
 namespace data_augmentation {
-
-void superimpose_image(const boost::gil::rgba8_image_t::view_t &masked,
-                       const boost::gil::rgba8_image_t::view_t &mask,
-                       const boost::gil::rgba8_image_t::view_t &transformed,
-                       const boost::gil::rgba8_image_t::view_t &mask_complement,
-                       const boost::gil::rgba8_image_t::view_t &background) {
-  for (int y = 0; y < masked.height(); ++y) {
-    auto masked_row_it = masked.row_begin(y);
-    // auto mask_row_it = mask.row_begin(y);
-    auto transformed_row_it = transformed.row_begin(y);
-    // auto mask_complement_row_it = mask_complement.row_begin(y);
-    auto background_row_it = background.row_begin(y);
-    for (int x = 0; x < masked.width(); ++x) {
-      float alpha_a = transformed_row_it[x][3]/255;
-      float alpha_b = background_row_it[x][3]/255;
-      auto over = [](float C_a, float C_b, float alpha_a, float alpha_b){
-        return ((C_a * alpha_a + C_b * alpha_b * (1 - alpha_a))/(
-                  alpha_a + alpha_b * (1 - alpha_a)));
-      };
-
-      masked_row_it[x][0] = over(transformed_row_it[x][0], background_row_it[x][0], alpha_a, alpha_b);
-      masked_row_it[x][1] = over(transformed_row_it[x][1], background_row_it[x][1], alpha_a, alpha_b);
-      masked_row_it[x][2] = over(transformed_row_it[x][2], background_row_it[x][2], alpha_a, alpha_b);
-      masked_row_it[x][3] = over(transformed_row_it[x][3], background_row_it[x][3], alpha_a, alpha_b);;
-    }
-  }
-}
 
 flex_dict build_annotation( ParameterSampler &parameter_sampler,
                             size_t object_width,
@@ -152,9 +118,6 @@ gl_sframe augment_data(const gl_sframe &data,
   for (const auto& row: data.range_iterator()) {
     flex_image object = row[column_index_map[image_column_name]].to<flex_image>();
     std::string label = row[column_index_map[target_column_name]].to<flex_string>();
-    size_t object_width = object.m_width;
-    size_t object_height = object.m_height;
-    size_t object_channels = object.m_channels;
     if (!(object.is_decoded())) {
       decode_image_inplace(object);
     }
@@ -172,20 +135,12 @@ gl_sframe augment_data(const gl_sframe &data,
       ParameterSampler parameter_sampler = ParameterSampler(
                                               background_width, 
                                               background_height,
-                                              (background_width-object_width)/2,
-                                              (background_height-object_height)/2);
+                                              (background_width-object.m_width)/2,
+                                              (background_height-object.m_height)/2);
 
       flex_dict annotation = build_annotation(parameter_sampler, 
-                                              object_width, object_height, 
+                                              object.m_width, object.m_height, 
                                               seed+row_number);
-
-      // create a gil view of the src buffer
-      boost::gil::rgba8_image_t::view_t starter_image_view = interleaved_view(
-        object_width,
-        object_height,
-        (boost::gil::rgba8_pixel_t*) (object.get_image_data()),
-        object_channels * object_width // row length in bytes
-        );
 
       DASSERT_TRUE(flex_background.get_image_data() != nullptr);
       DASSERT_TRUE(object.is_decoded());
@@ -197,40 +152,18 @@ gl_sframe augment_data(const gl_sframe &data,
         (boost::gil::rgb8_pixel_t*)(flex_background.get_image_data()),
         background_channels * background_width // row length in bytes
         );
-      
-      boost::gil::rgba8_image_t background_rgba(boost::gil::rgba8_image_t::point_t(background_view.dimensions()));
-      boost::gil::copy_and_convert_pixels(
-        background_view,
-        boost::gil::view(background_rgba)
-      );
-      
-      Eigen::Matrix<float, 3, 3> M = parameter_sampler.get_transform().inverse();
-      boost::gil::rgba8_image_t mask(boost::gil::rgba8_image_t::point_t(background_view.dimensions()));
-      boost::gil::rgba8_image_t mask_complement(boost::gil::rgba8_image_t::point_t(background_view.dimensions()));
-      // mask_complement = 1 - mask
-      fill_pixels(view(mask), RGBA_BLACK);
-      fill_pixels(view(mask_complement), RGBA_WHITE);
-      quadrilateral_geometry::color_quadrilateral(view(mask), view(mask_complement), 
-        parameter_sampler.get_warped_corners());
-      
-      boost::gil::rgba8_image_t transformed(boost::gil::rgba8_image_t::point_t(background_view.dimensions()));
-      fill_pixels(view(transformed), RGBA_WHITE);
-      resample_pixels(starter_image_view, view(transformed), M, boost::gil::bilinear_sampler());
-      
-      boost::gil::rgba8_image_t masked(boost::gil::rgba8_image_t::point_t(background_view.dimensions()));
-      fill_pixels(view(masked), RGBA_WHITE);
-      // Superposition:
-      // mask * warped + (1-mask) * background
-      superimpose_image(view(masked), view(mask), view(transformed), 
-                        view(mask_complement), view(background_rgba));
+
+      // create a gil view of the src buffer
+      if (object.m_channels == 4) {
+        images.push_back(
+          superposition::create_synthetic_rgba_image(background_view, parameter_sampler, object)
+          );
+      } else {
+        images.push_back(
+          superposition::create_synthetic_rgb_image(background_view, parameter_sampler, object)
+          );
+      }
       annotations.push_back(annotation);
-      annotations.push_back(annotation);
-      annotations.push_back(annotation);
-      annotations.push_back(annotation);
-      images.push_back(flex_image(masked));
-      images.push_back(flex_image(mask));
-      images.push_back(flex_image(transformed));
-      images.push_back(flex_image(background_rgba));
     }
   }
 
