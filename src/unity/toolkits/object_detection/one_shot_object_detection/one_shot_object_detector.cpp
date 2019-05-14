@@ -153,15 +153,9 @@ gl_sframe augment_data(const gl_sframe &data,
         background_channels * background_width // row length in bytes
         );
 
-      if (object.m_channels == 4) {
-        images.push_back(
-          superposition::create_synthetic_rgba_image(background_view, parameter_sampler, object)
-          );
-      } else {
-        images.push_back(
-          superposition::create_synthetic_rgb_image(background_view, parameter_sampler, object)
-          );
-      }
+      images.push_back(
+        superposition::create_synthetic_image(background_view, parameter_sampler, object)
+      );
       annotations.push_back(annotation);
     }
   }

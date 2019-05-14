@@ -38,8 +38,7 @@ bool is_in_quadrilateral(size_t x, size_t y,
  * This function colors the pixels inside the convex quadrilateral defined by
  * corners with white for the mask and black for the mask_complement.
  */
-void color_quadrilateral(const boost::gil::rgb8_image_t::view_t &mask_view, 
-                         const boost::gil::rgb8_image_t::view_t &mask_complement_view, 
+void color_quadrilateral(const boost::gil::rgba8_image_t::view_t &transformed_view, 
                          const std::vector<Eigen::Vector3f> &corners);
 
 } // quadrilateral_geometry
