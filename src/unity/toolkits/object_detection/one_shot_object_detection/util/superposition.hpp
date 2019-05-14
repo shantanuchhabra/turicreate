@@ -14,13 +14,11 @@
 namespace turi {
 namespace one_shot_object_detection {
 namespace data_augmentation {
-namespace superposition {
 
 flex_image create_synthetic_image(const boost::gil::rgb8_image_t::view_t &background_view,
                                   ParameterSampler &parameter_sampler,
                                   const flex_image &object);
 
-} // superposition
 } // data_augmentation
 } // one_shot_object_detection
 } // turi

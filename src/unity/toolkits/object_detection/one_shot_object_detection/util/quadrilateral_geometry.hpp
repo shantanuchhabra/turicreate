@@ -11,10 +11,7 @@
 
 namespace turi {
 namespace one_shot_object_detection {
-
 namespace data_augmentation {
-
-namespace quadrilateral_geometry {
 
 class Line {
 public:
@@ -41,7 +38,6 @@ bool is_in_quadrilateral(size_t x, size_t y,
 void color_quadrilateral(const boost::gil::rgba8_image_t::view_t &transformed_view, 
                          const std::vector<Eigen::Vector3f> &corners);
 
-} // quadrilateral_geometry
 } // data_augmentation
 } // one_shot_object_detection
 } // turi

@@ -154,7 +154,7 @@ gl_sframe augment_data(const gl_sframe &data,
         );
 
       images.push_back(
-        superposition::create_synthetic_image(background_view, parameter_sampler, object)
+        create_synthetic_image(background_view, parameter_sampler, object)
       );
       annotations.push_back(annotation);
     }

@@ -11,13 +11,12 @@
 #include <unity/toolkits/object_detection/one_shot_object_detection/util/superposition.hpp>
 #include <unity/toolkits/object_detection/one_shot_object_detection/util/quadrilateral_geometry.hpp>
 
-#define RGB_WHITE boost::gil::rgb8_pixel_t(255,255,255)
-#define RGBA_WHITE boost::gil::rgba8_pixel_t(255,255,255,0)
+static const boost::gil::rgb8_pixel_t RGB_WHITE(255,255,255);
+static const boost::gil::rgba8_pixel_t RGBA_WHITE(255,255,255,0);
 
 namespace turi {
 namespace one_shot_object_detection {
 namespace data_augmentation {
-namespace superposition {
 
 void superimpose_image(const boost::gil::rgb8_image_t::view_t &masked,
                        const boost::gil::rgba8_image_t::view_t &transformed,
@@ -60,7 +59,7 @@ void superimpose_rgb_object_image(ParameterSampler &parameter_sampler,
     view(starter_image_rgba)
   );
   resample_pixels(view(starter_image_rgba), transformed, M, boost::gil::bilinear_sampler());
-  quadrilateral_geometry::color_quadrilateral(transformed, parameter_sampler.get_warped_corners());
+  color_quadrilateral(transformed, parameter_sampler.get_warped_corners());
   superimpose_image(masked, transformed, background);
 }
 
@@ -100,7 +99,6 @@ flex_image create_synthetic_image(const boost::gil::rgb8_image_t::view_t &backgr
   return flex_image(masked);
 }
 
-} // superposition
 } // data_augmentation
 } // one_shot_object_detection
 } // turi
