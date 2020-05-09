@@ -19,7 +19,8 @@ def create(data,
            backgrounds=None,
            batch_size=0,
            max_iterations=0,
-           verbose=True):
+           verbose=True,
+           disable_rotations=False):
     """
     Create a :class:`OneShotObjectDetector` model. Note: The One Shot Object Detector
     is currently in beta.
@@ -60,7 +61,7 @@ def create(data,
         # Make predictions on the training set and as column to the SFrame
         >>> test_data['predictions'] = model.predict(test_data)
     """
-    augmented_data = _preview_synthetic_training_data(data, target, backgrounds)
+    augmented_data = _preview_synthetic_training_data(data, target, backgrounds, disable_rotations)
     model = _tc.object_detector.create( augmented_data,
                                         batch_size=batch_size,
                                         max_iterations=max_iterations,

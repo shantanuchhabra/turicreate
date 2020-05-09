@@ -11,6 +11,8 @@
 #include <core/logging/assertions.hpp>
 #include <limits>
 
+#include <iostream>
+
 #include <toolkits/object_detection/one_shot_object_detection/util/parameter_sampler.hpp>
 
 /* A ParameterSampler class to randomly generate different samples of parameters
@@ -20,8 +22,10 @@
 namespace turi {
 namespace one_shot_object_detection {
 
-ParameterSampler::ParameterSampler(size_t starter_width, size_t starter_height)
-    : starter_width_(starter_width), starter_height_(starter_height) {
+ParameterSampler::ParameterSampler(size_t starter_width, size_t starter_height, bool disable_rotations)
+    : starter_width_(starter_width),
+      starter_height_(starter_height),
+      disable_rotations_(disable_rotations) {
       warped_corners_.reserve(4);
     }
 
@@ -79,24 +83,30 @@ void ParameterSampler::compute_coordinates_from_warped_corners() {
   center_y_ = (min_y + max_y) / 2;
   bounding_box_width_ = max_x - min_x;
   bounding_box_height_ = max_y - min_y;
+
+
 }
 
 void ParameterSampler::perform_x_y_translation(size_t background_width,
-    size_t background_height, std::mt19937 *engine_pointer) {
+    size_t background_height, std::mt19937 &engine_pointer) {
   size_t x_margin = static_cast<size_t>(bounding_box_width_/2);
   size_t y_margin = static_cast<size_t>(bounding_box_height_/2);
   if (background_width < x_margin || background_height < y_margin) {
+    std::cout << "oopsss" << std::endl;
     dx_ = 0;
     dy_ = 0;
   } else {
+    std::cout << "yeah!" << std::endl;
     std::uniform_int_distribution<size_t> final_center_x_distribution(
       x_margin, background_width - x_margin);
     std::uniform_int_distribution<size_t> final_center_y_distribution(
       y_margin, background_height - y_margin);
-    size_t new_center_x = final_center_x_distribution(*engine_pointer);
-    size_t new_center_y = final_center_y_distribution(*engine_pointer);
-    dx_ = new_center_x - static_cast<size_t>(center_x_);
-    dy_ = new_center_y - static_cast<size_t>(center_y_);
+    int new_center_x = final_center_x_distribution(engine_pointer);
+    int new_center_y = final_center_y_distribution(engine_pointer);
+    dx_ = new_center_x - static_cast<int>(center_x_);
+    dy_ = new_center_y - static_cast<int>(center_y_);
+    std::cout << "dx = " << dx_ <<  std::endl;
+    std::cout << "dy = " << dy_ <<  std::endl;
   }
   
   boost::gil::matrix3x2<double> affine = boost::gil::matrix3x2<double>::get_translate(
@@ -105,6 +115,12 @@ void ParameterSampler::perform_x_y_translation(size_t background_width,
                        affine.b, affine.d, affine.f,
                               0,        0,        1;
   
+  std::cout << "warped_corners_ before translation" << std::endl;
+  std::cout << warped_corners_[0] << std::endl;
+  std::cout << warped_corners_[1] << std::endl;
+  std::cout << warped_corners_[2] << std::endl;
+  std::cout << warped_corners_[3] << std::endl;
+
   std::transform(warped_corners_.begin(), warped_corners_.end(),
     warped_corners_.begin(), 
     [&affine](Eigen::Vector3f corner) -> Eigen::Vector3f {
@@ -113,6 +129,12 @@ void ParameterSampler::perform_x_y_translation(size_t background_width,
       Eigen::Vector3f answer(translated_corner.x, translated_corner.y, 1.0);
       return answer;
   });
+
+  std::cout << "warped_corners_ after translation" << std::endl;
+  std::cout << warped_corners_[0] << std::endl;
+  std::cout << warped_corners_[1] << std::endl;
+  std::cout << warped_corners_[2] << std::endl;
+  std::cout << warped_corners_[3] << std::endl;
 
   compute_coordinates_from_warped_corners();
 }
@@ -174,9 +196,9 @@ void ParameterSampler::perform_perspective_transform() {
  * then also build the transform.
  */
 void ParameterSampler::sample(size_t background_width, size_t background_height,
-                              size_t seed, size_t row_number) {
+                              size_t seed, size_t row_number, size_t starter_row_number) {
   double theta_mean, phi_mean, gamma_mean;
-  std::seed_seq seed_seq = {static_cast<int>(seed), static_cast<int>(row_number)};
+  std::seed_seq seed_seq = {static_cast<int>(seed), static_cast<int>(row_number), static_cast<int>(starter_row_number)};
   std::mt19937 engine(seed_seq);
   
   theta_mean = theta_means_[generate_random_index(&engine, theta_means_.size())];
@@ -192,12 +214,17 @@ void ParameterSampler::sample(size_t background_width, size_t background_height,
   theta_ = deg_to_rad(theta_distribution(engine));
   phi_ = deg_to_rad(phi_distribution(engine));
   gamma_ = deg_to_rad(gamma_distribution(engine));
+  if (disable_rotations_) {
+    theta_ = 0.0f;
+    phi_ = 0.0f;
+    gamma_ = 0.0f;
+  }
   focal_ = focal_distribution(engine);
   std::uniform_int_distribution<int> dz_distribution(std::max(background_width, background_height),
                                                      max_depth_);
   dz_ = focal_ + dz_distribution(engine);
   perform_perspective_transform();
-  perform_x_y_translation(background_width, background_height, &engine);
+  perform_x_y_translation(background_width, background_height, engine);
 }
 
 }  // namespace one_shot_object_detection

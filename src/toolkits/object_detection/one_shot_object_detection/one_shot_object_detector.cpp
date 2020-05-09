@@ -35,9 +35,9 @@ flex_dict build_annotation(ParameterSampler &parameter_sampler,
                            const std::string &label,
                            size_t object_width, size_t object_height,
                            size_t background_width, size_t background_height,
-                           size_t seed, size_t row_number) {
+                           size_t seed, size_t row_number, size_t starter_row_number) {
   
-  parameter_sampler.sample(background_width, background_height, seed, row_number);
+  parameter_sampler.sample(background_width, background_height, seed, row_number, starter_row_number);
   flex_dict coordinates = parameter_sampler.get_coordinates();
   flex_dict annotation = {std::make_pair("coordinates", coordinates),
                           std::make_pair("label", label)};
@@ -76,14 +76,15 @@ create_synthetic_image_from_background_and_starter(ParameterSampler &parameter_s
                                                    const flex_image &background,
                                                    std::string &label,
                                                    size_t seed,
-                                                   size_t row_number) {
+                                                   size_t row_number,
+                                                   size_t starter_row_number) {
 
   // construct annotation dictionary from parameters
   flex_dict annotation =
       build_annotation(parameter_sampler, label, 
                        starter.m_width, starter.m_height,
                        background.m_width, background.m_height,
-                       seed, row_number);
+                       seed, row_number, starter_row_number);
 
   if (background.get_image_data() == nullptr) {
     log_and_throw("Background image has null image data.");
@@ -120,7 +121,8 @@ gl_sframe augment_data(const gl_sframe &data,
                        const std::string &image_column_name,
                        const std::string &target_column_name,
                        const gl_sarray &backgrounds, long long seed,
-                       bool verbose) {
+                       bool verbose,
+                       bool disable_rotations) {
   size_t backgrounds_size = backgrounds.size();
   size_t total_augmented_rows = data.size() * backgrounds_size;
   table_printer table(
@@ -161,13 +163,15 @@ gl_sframe augment_data(const gl_sframe &data,
    * Replacing the `for` with a `parallel_for` fails the export_coreml unit test
    * with an EXC_BAD_ACCESS in the function call to boost::gil::resample_pixels
    */
+  size_t starter_row_number = 0;
   for (const sframe_rows::row &row : decompressed_data.range_iterator()) {
     // go through all the starter images and create augmented images for
     // all starter images and the respective chunk of background images
     const flex_image &object = row[image_column_index].get<flex_image>();
     std::string label = row[target_column_index].to<flex_string>();
     ParameterSampler parameter_sampler = ParameterSampler(
-      object.m_width, object.m_height);
+      object.m_width, object.m_height, disable_rotations);
+    starter_row_number++;
 
     for (size_t segment_id = 0; segment_id < nsegments; segment_id++) {
       size_t segment_start = (segment_id * backgrounds.size()) / nsegments;
@@ -182,7 +186,7 @@ gl_sframe augment_data(const gl_sframe &data,
         std::pair<flex_image, flex_dict> synthetic_row =
             create_synthetic_image_from_background_and_starter(
                 parameter_sampler, object, flex_background,
-                label, seed, row_number);
+                label, seed, row_number, starter_row_number);
         flex_image synthetic_image = synthetic_row.first;
         flex_dict annotation = synthetic_row.second;
         // write the synthetically generated image and the constructed
@@ -229,7 +233,7 @@ gl_sframe one_shot_object_detector::augment(
   // can't This should just happen on the Python side.
   gl_sframe augmented_data = data_augmentation::augment_data(
       data, image_column_name, target_column_name, backgrounds, options["seed"],
-      options["verbose"]);
+      options["verbose"], options["disable_rotations"]);
   // TODO: Call object_detector::train from here once we incorporate mxnet into
   // the C++ Object Detector.
   return augmented_data;

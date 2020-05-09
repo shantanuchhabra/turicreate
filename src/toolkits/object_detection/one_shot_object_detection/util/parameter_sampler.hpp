@@ -28,7 +28,7 @@ namespace one_shot_object_detection {
  */
 class ParameterSampler {
  public:
-  ParameterSampler(size_t starter_width, size_t starter_height);
+  ParameterSampler(size_t starter_width, size_t starter_height, bool disable_rotations);
 
   /* Getters for all the parameters:
    * theta: rotation around the x axis.
@@ -60,12 +60,13 @@ class ParameterSampler {
    * then also build the transform.
    */
   void sample(size_t background_width, size_t background_height,
-              size_t seed, size_t row_number);
+              size_t seed, size_t row_number, size_t starter_row_number);
 
  private:
   size_t starter_width_;
   size_t starter_height_;
-  size_t max_depth_ = 13000;
+  bool disable_rotations_;
+  size_t max_depth_ = 3000;
   double angle_stdev_ = 20.0;
   double focal_stdev_ = 40.0;
   std::vector<double> theta_means_ = {-180.0, 0.0, 180.0};
@@ -93,7 +94,7 @@ class ParameterSampler {
   std::vector<Eigen::Vector3f> get_warped_corners();
   
   void compute_coordinates_from_warped_corners();
-  void perform_x_y_translation(size_t background_width, size_t background_height, std::mt19937 *engine_pointer);
+  void perform_x_y_translation(size_t background_width, size_t background_height, std::mt19937 &engine_pointer);
   void perform_perspective_transform();
 };
 
