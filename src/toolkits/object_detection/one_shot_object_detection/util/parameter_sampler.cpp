@@ -11,8 +11,6 @@
 #include <core/logging/assertions.hpp>
 #include <limits>
 
-#include <iostream>
-
 #include <toolkits/object_detection/one_shot_object_detection/util/parameter_sampler.hpp>
 
 /* A ParameterSampler class to randomly generate different samples of parameters
@@ -92,11 +90,9 @@ void ParameterSampler::perform_x_y_translation(size_t background_width,
   size_t x_margin = static_cast<size_t>(bounding_box_width_/2);
   size_t y_margin = static_cast<size_t>(bounding_box_height_/2);
   if (background_width < x_margin || background_height < y_margin) {
-    std::cout << "oopsss" << std::endl;
     dx_ = 0;
     dy_ = 0;
   } else {
-    std::cout << "yeah!" << std::endl;
     std::uniform_int_distribution<size_t> final_center_x_distribution(
       x_margin, background_width - x_margin);
     std::uniform_int_distribution<size_t> final_center_y_distribution(
@@ -105,8 +101,6 @@ void ParameterSampler::perform_x_y_translation(size_t background_width,
     int new_center_y = final_center_y_distribution(engine_pointer);
     dx_ = new_center_x - static_cast<int>(center_x_);
     dy_ = new_center_y - static_cast<int>(center_y_);
-    std::cout << "dx = " << dx_ <<  std::endl;
-    std::cout << "dy = " << dy_ <<  std::endl;
   }
   
   boost::gil::matrix3x2<double> affine = boost::gil::matrix3x2<double>::get_translate(
@@ -115,12 +109,6 @@ void ParameterSampler::perform_x_y_translation(size_t background_width,
                        affine.b, affine.d, affine.f,
                               0,        0,        1;
   
-  std::cout << "warped_corners_ before translation" << std::endl;
-  std::cout << warped_corners_[0] << std::endl;
-  std::cout << warped_corners_[1] << std::endl;
-  std::cout << warped_corners_[2] << std::endl;
-  std::cout << warped_corners_[3] << std::endl;
-
   std::transform(warped_corners_.begin(), warped_corners_.end(),
     warped_corners_.begin(), 
     [&affine](Eigen::Vector3f corner) -> Eigen::Vector3f {
@@ -129,12 +117,6 @@ void ParameterSampler::perform_x_y_translation(size_t background_width,
       Eigen::Vector3f answer(translated_corner.x, translated_corner.y, 1.0);
       return answer;
   });
-
-  std::cout << "warped_corners_ after translation" << std::endl;
-  std::cout << warped_corners_[0] << std::endl;
-  std::cout << warped_corners_[1] << std::endl;
-  std::cout << warped_corners_[2] << std::endl;
-  std::cout << warped_corners_[3] << std::endl;
 
   compute_coordinates_from_warped_corners();
 }
